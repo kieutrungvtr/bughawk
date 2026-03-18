@@ -674,6 +674,521 @@
       "documentation_links": []
     },
     {
+      "id": "php_undefined_variable",
+      "name": "PHP Undefined Variable",
+      "category": "null_reference",
+      "description": "Using a variable that hasn't been defined in PHP.",
+      "exception_types": ["Notice", "Warning", "ErrorException"],
+      "message_patterns": [
+        "Undefined variable:",
+        "Undefined variable \\$\\w+"
+      ],
+      "code_patterns": [
+        "\\$\\w+"
+      ],
+      "common_causes": [
+        "Typo in variable name",
+        "Variable not initialized before use",
+        "Variable defined in different scope",
+        "Conditional initialization missing else branch"
+      ],
+      "typical_fixes": [
+        {
+          "description": "Initialize variable before use",
+          "code_template": "$value = null;\nif ($condition) {\n    $value = 'something';\n}\necho $value;",
+          "explanation": "Always initialize variables before conditional logic.",
+          "caveats": []
+        },
+        {
+          "description": "Use null coalescing for optional variables",
+          "code_template": "$value = $optionalVar ?? 'default';",
+          "explanation": "Provide default value if variable might not exist.",
+          "caveats": []
+        },
+        {
+          "description": "Check with isset() before use",
+          "code_template": "if (isset($var)) {\n    // use $var\n}",
+          "explanation": "Check if variable exists before using it.",
+          "caveats": []
+        }
+      ],
+      "examples": [
+        {
+          "error": "Notice: Undefined variable: username",
+          "code": "echo $username;",
+          "fix": "$username = $username ?? '';\necho $username;"
+        }
+      ],
+      "languages": ["php"],
+      "severity": "medium",
+      "documentation_links": []
+    },
+    {
+      "id": "php_type_error",
+      "name": "PHP TypeError",
+      "category": "type_error",
+      "description": "Function received argument of wrong type in PHP.",
+      "exception_types": ["TypeError"],
+      "message_patterns": [
+        "must be of type .*, .* given",
+        "Argument #\\d+ \\(\\$\\w+\\) must be of type",
+        "Return value must be of type"
+      ],
+      "code_patterns": [
+        "function\\s+\\w+\\([^)]*\\)",
+        "->\\w+\\(",
+        "::\\w+\\("
+      ],
+      "common_causes": [
+        "Passing null to typed parameter",
+        "Wrong data type from user input",
+        "Database returning string instead of int",
+        "API response type mismatch"
+      ],
+      "typical_fixes": [
+        {
+          "description": "Make parameter nullable",
+          "code_template": "function process(?string $value): void {\n    if ($value === null) {\n        return;\n    }\n    // process $value\n}",
+          "explanation": "Use nullable type hint if null is valid value.",
+          "caveats": []
+        },
+        {
+          "description": "Cast or convert value",
+          "code_template": "$intValue = (int) $stringValue;\n$result = processNumber($intValue);",
+          "explanation": "Cast value to expected type before passing.",
+          "caveats": [
+            "Be careful with type coercion edge cases"
+          ]
+        },
+        {
+          "description": "Validate and sanitize input",
+          "code_template": "$value = is_string($input) ? $input : (string) $input;\nprocessString($value);",
+          "explanation": "Validate input type and convert if needed.",
+          "caveats": []
+        }
+      ],
+      "examples": [
+        {
+          "error": "TypeError: strlen(): Argument #1 ($string) must be of type string, null given",
+          "code": "echo strlen($name);",
+          "fix": "echo strlen($name ?? '');"
+        }
+      ],
+      "languages": ["php"],
+      "severity": "high",
+      "documentation_links": []
+    },
+    {
+      "id": "php_class_not_found",
+      "name": "PHP Class Not Found",
+      "category": "import_error",
+      "description": "Class, interface, or trait not found in PHP.",
+      "exception_types": ["Error"],
+      "message_patterns": [
+        "Class ['\"]\\w+['\"] not found",
+        "Interface ['\"]\\w+['\"] not found",
+        "Trait ['\"]\\w+['\"] not found"
+      ],
+      "code_patterns": [
+        "new\\s+\\w+",
+        "use\\s+[\\w\\\\]+",
+        "extends\\s+\\w+",
+        "implements\\s+\\w+"
+      ],
+      "common_causes": [
+        "Missing use statement",
+        "Namespace typo",
+        "Autoloader not configured",
+        "Class file not included",
+        "composer autoload not updated"
+      ],
+      "typical_fixes": [
+        {
+          "description": "Add use statement",
+          "code_template": "use App\\Models\\User;\n\n$user = new User();",
+          "explanation": "Import the class with a use statement.",
+          "caveats": []
+        },
+        {
+          "description": "Run composer dump-autoload",
+          "code_template": "composer dump-autoload",
+          "explanation": "Regenerate Composer autoload files.",
+          "caveats": []
+        },
+        {
+          "description": "Check namespace and class name",
+          "code_template": "// Verify class file location matches namespace\n// App\\Models\\User should be in app/Models/User.php",
+          "explanation": "Ensure file location matches PSR-4 namespace.",
+          "caveats": []
+        }
+      ],
+      "examples": [
+        {
+          "error": "Class 'App\\Models\\User' not found",
+          "code": "$user = new User();",
+          "fix": "use App\\Models\\User;\n\n$user = new User();"
+        }
+      ],
+      "languages": ["php"],
+      "severity": "high",
+      "documentation_links": []
+    },
+    {
+      "id": "php_division_by_zero",
+      "name": "PHP Division by Zero",
+      "category": "division_by_zero",
+      "description": "Attempting to divide by zero in PHP.",
+      "exception_types": ["DivisionByZeroError", "Warning"],
+      "message_patterns": [
+        "Division by zero",
+        "DivisionByZeroError",
+        "Modulo by zero"
+      ],
+      "code_patterns": [
+        "\\$\\w+\\s*/\\s*\\$\\w+",
+        "\\$\\w+\\s*%\\s*\\$\\w+"
+      ],
+      "common_causes": [
+        "Divisor not validated",
+        "Empty array count as divisor",
+        "User input not sanitized",
+        "Database returning zero"
+      ],
+      "typical_fixes": [
+        {
+          "description": "Check divisor before division",
+          "code_template": "$result = $divisor != 0 ? $numerator / $divisor : 0;",
+          "explanation": "Use ternary to check divisor before dividing.",
+          "caveats": [
+            "Choose appropriate default value"
+          ]
+        },
+        {
+          "description": "Use max() to ensure minimum value",
+          "code_template": "$average = $total / max(1, $count);",
+          "explanation": "Use max() to ensure divisor is at least 1.",
+          "caveats": []
+        },
+        {
+          "description": "Validate input early",
+          "code_template": "if ($divisor === 0) {\n    throw new InvalidArgumentException('Divisor cannot be zero');\n}\n$result = $numerator / $divisor;",
+          "explanation": "Validate and throw early if divisor is invalid.",
+          "caveats": []
+        }
+      ],
+      "examples": [
+        {
+          "error": "Division by zero",
+          "code": "$average = $total / $count;",
+          "fix": "$average = $count > 0 ? $total / $count : 0;"
+        }
+      ],
+      "languages": ["php"],
+      "severity": "high",
+      "documentation_links": []
+    },
+    {
+      "id": "php_sql_error",
+      "name": "PHP SQL/Database Error",
+      "category": "database_error",
+      "description": "SQL query or database operation failed in PHP.",
+      "exception_types": ["PDOException", "QueryException", "mysqli_sql_exception"],
+      "message_patterns": [
+        "SQLSTATE\\[",
+        "PDOException",
+        "QueryException",
+        "Integrity constraint violation",
+        "Duplicate entry",
+        "Column not found",
+        "Table .* doesn't exist",
+        "Unknown column"
+      ],
+      "code_patterns": [
+        "->query\\(",
+        "->prepare\\(",
+        "->execute\\(",
+        "DB::select",
+        "->where\\(",
+        "->insert\\(",
+        "->update\\("
+      ],
+      "common_causes": [
+        "Column or table name typo",
+        "Missing migration not run",
+        "Unique constraint violation",
+        "Foreign key constraint failure",
+        "SQL injection in raw query"
+      ],
+      "typical_fixes": [
+        {
+          "description": "Use prepared statements",
+          "code_template": "$stmt = $pdo->prepare('SELECT * FROM users WHERE id = ?');\n$stmt->execute([$userId]);",
+          "explanation": "Use parameter binding to prevent SQL injection.",
+          "caveats": []
+        },
+        {
+          "description": "Handle duplicate entry gracefully",
+          "code_template": "try {\n    $user->save();\n} catch (QueryException $e) {\n    if ($e->getCode() === '23000') { // Duplicate entry\n        return User::where('email', $email)->first();\n    }\n    throw $e;\n}",
+          "explanation": "Catch and handle specific database errors.",
+          "caveats": []
+        },
+        {
+          "description": "Use updateOrCreate for upsert",
+          "code_template": "$user = User::updateOrCreate(\n    ['email' => $email],\n    ['name' => $name]\n);",
+          "explanation": "Use updateOrCreate to handle existing records.",
+          "caveats": [
+            "Laravel specific"
+          ]
+        }
+      ],
+      "examples": [
+        {
+          "error": "SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry",
+          "code": "User::create(['email' => $email]);",
+          "fix": "User::firstOrCreate(['email' => $email]);"
+        }
+      ],
+      "languages": ["php"],
+      "severity": "high",
+      "documentation_links": []
+    },
+    {
+      "id": "php_file_error",
+      "name": "PHP File Operation Error",
+      "category": "io_error",
+      "description": "File operation failed in PHP.",
+      "exception_types": ["ErrorException", "Warning"],
+      "message_patterns": [
+        "failed to open stream",
+        "No such file or directory",
+        "Permission denied",
+        "fopen\\(\\): ",
+        "file_get_contents\\(\\): ",
+        "include\\(\\): ",
+        "require\\(\\): "
+      ],
+      "code_patterns": [
+        "fopen\\(",
+        "file_get_contents\\(",
+        "file_put_contents\\(",
+        "include\\s+",
+        "require\\s+",
+        "Storage::"
+      ],
+      "common_causes": [
+        "File path incorrect",
+        "File or directory doesn't exist",
+        "Insufficient permissions",
+        "Disk full",
+        "Path traversal issue"
+      ],
+      "typical_fixes": [
+        {
+          "description": "Check file exists before operation",
+          "code_template": "if (file_exists($path)) {\n    $content = file_get_contents($path);\n} else {\n    $content = '';\n}",
+          "explanation": "Check if file exists before reading.",
+          "caveats": []
+        },
+        {
+          "description": "Create directory if needed",
+          "code_template": "$dir = dirname($path);\nif (!is_dir($dir)) {\n    mkdir($dir, 0755, true);\n}\nfile_put_contents($path, $content);",
+          "explanation": "Create parent directories before writing file.",
+          "caveats": []
+        },
+        {
+          "description": "Use Storage facade (Laravel)",
+          "code_template": "use Illuminate\\Support\\Facades\\Storage;\n\nif (Storage::exists($path)) {\n    $content = Storage::get($path);\n}",
+          "explanation": "Use Laravel Storage facade for consistent file handling.",
+          "caveats": [
+            "Laravel specific"
+          ]
+        }
+      ],
+      "examples": [
+        {
+          "error": "file_get_contents(): failed to open stream: No such file or directory",
+          "code": "$data = file_get_contents($configFile);",
+          "fix": "$data = file_exists($configFile) ? file_get_contents($configFile) : '{}';"
+        }
+      ],
+      "languages": ["php"],
+      "severity": "high",
+      "documentation_links": []
+    },
+    {
+      "id": "php_json_error",
+      "name": "PHP JSON Error",
+      "category": "value_error",
+      "description": "JSON encoding or decoding failed in PHP.",
+      "exception_types": ["JsonException", "ValueError"],
+      "message_patterns": [
+        "json_decode\\(\\):",
+        "json_encode\\(\\):",
+        "Syntax error",
+        "Malformed UTF-8",
+        "Control character error"
+      ],
+      "code_patterns": [
+        "json_decode\\(",
+        "json_encode\\(",
+        "->json\\(",
+        "response\\(\\)->json"
+      ],
+      "common_causes": [
+        "Invalid JSON string",
+        "UTF-8 encoding issues",
+        "Empty string passed to json_decode",
+        "Circular reference in json_encode"
+      ],
+      "typical_fixes": [
+        {
+          "description": "Use JSON_THROW_ON_ERROR flag",
+          "code_template": "try {\n    $data = json_decode($json, true, 512, JSON_THROW_ON_ERROR);\n} catch (JsonException $e) {\n    $data = [];\n}",
+          "explanation": "Use JSON_THROW_ON_ERROR to catch JSON errors properly.",
+          "caveats": [
+            "Requires PHP 7.3+"
+          ]
+        },
+        {
+          "description": "Validate JSON before parsing",
+          "code_template": "$data = json_decode($json, true);\nif (json_last_error() !== JSON_ERROR_NONE) {\n    throw new InvalidArgumentException('Invalid JSON: ' . json_last_error_msg());\n}",
+          "explanation": "Check json_last_error() after decoding.",
+          "caveats": []
+        },
+        {
+          "description": "Handle empty or null input",
+          "code_template": "$data = !empty($json) ? json_decode($json, true) : [];",
+          "explanation": "Check for empty input before decoding.",
+          "caveats": []
+        }
+      ],
+      "examples": [
+        {
+          "error": "json_decode(): Argument #1 ($json) must be of type string, null given",
+          "code": "$data = json_decode($response);",
+          "fix": "$data = json_decode($response ?? '{}', true);"
+        }
+      ],
+      "languages": ["php"],
+      "severity": "medium",
+      "documentation_links": []
+    },
+    {
+      "id": "php_session_error",
+      "name": "PHP Session Error",
+      "category": "session_error",
+      "description": "Session operation failed in PHP.",
+      "exception_types": ["Warning", "ErrorException"],
+      "message_patterns": [
+        "session_start\\(\\):",
+        "Cannot modify header information",
+        "headers already sent",
+        "Session .* not found"
+      ],
+      "code_patterns": [
+        "session_start\\(",
+        "\\$_SESSION\\[",
+        "Session::get",
+        "session\\(\\)"
+      ],
+      "common_causes": [
+        "Output sent before session_start()",
+        "Headers already sent by whitespace/BOM",
+        "Session directory not writable",
+        "Session expired or invalid"
+      ],
+      "typical_fixes": [
+        {
+          "description": "Start session at beginning of script",
+          "code_template": "<?php\nsession_start();\n// ... rest of code",
+          "explanation": "Call session_start() before any output.",
+          "caveats": [
+            "No whitespace or BOM before <?php"
+          ]
+        },
+        {
+          "description": "Check if session already started",
+          "code_template": "if (session_status() === PHP_SESSION_NONE) {\n    session_start();\n}",
+          "explanation": "Only start session if not already active.",
+          "caveats": []
+        },
+        {
+          "description": "Use output buffering",
+          "code_template": "ob_start();\nsession_start();\n// ... code that may output\nob_end_flush();",
+          "explanation": "Buffer output to prevent 'headers already sent' errors.",
+          "caveats": []
+        }
+      ],
+      "examples": [
+        {
+          "error": "session_start(): Cannot start session when headers already sent",
+          "code": "echo 'Hello';\nsession_start();",
+          "fix": "session_start();\necho 'Hello';"
+        }
+      ],
+      "languages": ["php"],
+      "severity": "medium",
+      "documentation_links": []
+    },
+    {
+      "id": "php_memory_limit",
+      "name": "PHP Memory Limit Exceeded",
+      "category": "resource_error",
+      "description": "Script exceeded PHP memory limit.",
+      "exception_types": ["Error"],
+      "message_patterns": [
+        "Allowed memory size of .* bytes exhausted",
+        "Out of memory"
+      ],
+      "code_patterns": [
+        "file_get_contents\\(",
+        "array_",
+        "json_decode\\(",
+        "foreach\\s*\\(",
+        "->get\\(\\)",
+        "->all\\(\\)"
+      ],
+      "common_causes": [
+        "Loading too much data into memory",
+        "Large file processed entirely in memory",
+        "Infinite loop or recursion",
+        "Memory leak in long-running process"
+      ],
+      "typical_fixes": [
+        {
+          "description": "Use chunking for large datasets",
+          "code_template": "// Laravel\nUser::chunk(1000, function ($users) {\n    foreach ($users as $user) {\n        // process user\n    }\n});",
+          "explanation": "Process data in chunks instead of loading all at once.",
+          "caveats": []
+        },
+        {
+          "description": "Use generators for large files",
+          "code_template": "function readLargeFile($path) {\n    $handle = fopen($path, 'r');\n    while (($line = fgets($handle)) !== false) {\n        yield $line;\n    }\n    fclose($handle);\n}\n\nforeach (readLargeFile($path) as $line) {\n    // process line\n}",
+          "explanation": "Use generators to process files line by line.",
+          "caveats": []
+        },
+        {
+          "description": "Increase memory limit (temporarily)",
+          "code_template": "ini_set('memory_limit', '512M');\n// or better: fix the code to use less memory",
+          "explanation": "Increase limit for specific script if needed.",
+          "caveats": [
+            "This is a workaround, not a fix",
+            "Better to optimize memory usage"
+          ]
+        }
+      ],
+      "examples": [
+        {
+          "error": "Allowed memory size of 134217728 bytes exhausted",
+          "code": "$users = User::all();\nforeach ($users as $user) { ... }",
+          "fix": "User::chunk(1000, function ($users) {\n    foreach ($users as $user) { ... }\n});"
+        }
+      ],
+      "languages": ["php"],
+      "severity": "high",
+      "documentation_links": []
+    },
+    {
       "id": "connection_timeout",
       "name": "Connection Timeout Error",
       "category": "timeout_error",
