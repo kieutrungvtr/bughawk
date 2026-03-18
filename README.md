@@ -34,7 +34,7 @@ BugHawk is an intelligent, automated bug hunting and fixing CLI tool that integr
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/bughawk.git
+git clone https://github.com/kieutrungvtr/bughawk.git
 cd bughawk
 
 # Install dependencies
@@ -52,7 +52,7 @@ Follow these steps to integrate BugHawk into your existing project and start fix
 
 ```bash
 # Option A: Install from source (recommended for development)
-git clone https://github.com/your-org/bughawk.git
+git clone https://github.com/kieutrungvtr/bughawk.git
 cd bughawk
 pip install -e .
 

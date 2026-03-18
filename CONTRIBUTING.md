@@ -26,7 +26,7 @@ By participating in this project, you agree to abide by our code of conduct:
 
 ### Finding Issues to Work On
 
-1. Check our [GitHub Issues](https://github.com/your-org/bughawk/issues) for open tasks
+1. Check our [GitHub Issues](https://github.com/kieutrungvtr/bughawk/issues) for open tasks
 2. Look for issues labeled `good first issue` if you're new
 3. Issues labeled `help wanted` are great for contributors
 4. Feel free to ask questions on any issue
@@ -378,7 +378,7 @@ Supported platforms:
 
 ## Questions?
 
-- Open a [GitHub Discussion](https://github.com/your-org/bughawk/discussions)
+- Open a [GitHub Discussion](https://github.com/kieutrungvtr/bughawk/discussions)
 - Join our community chat
 - Email the maintainers
 
