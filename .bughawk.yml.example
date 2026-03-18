@@ -1,0 +1,168 @@
+# BugHawk Configuration File
+# Copy this file to .bughawk.yml and customize as needed.
+#
+# Configuration is loaded from multiple sources with the following priority:
+# 1. Command-line arguments (highest priority)
+# 2. Environment variables (prefixed with BUGHAWK_)
+# 3. This .bughawk.yml file
+# 4. Default values (lowest priority)
+
+# =============================================================================
+# Sentry Configuration
+# =============================================================================
+sentry:
+  # Sentry authentication token (required for fetching issues)
+  # Generate at: https://sentry.io/settings/account/api/auth-tokens/
+  # Env: BUGHAWK_SENTRY_AUTH_TOKEN
+  auth_token: ""
+
+  # Sentry organization slug (required)
+  # Found in your Sentry URL: https://sentry.io/organizations/<org-slug>/
+  # Env: BUGHAWK_SENTRY_ORG
+  org: ""
+
+  # List of Sentry project slugs to monitor (required)
+  # Env: BUGHAWK_SENTRY_PROJECTS (comma-separated)
+  projects:
+    - my-project
+    # - another-project
+
+  # Sentry API base URL (optional, for self-hosted instances)
+  # Env: BUGHAWK_SENTRY_BASE_URL
+  # Default: https://sentry.io/api/0
+  base_url: "https://sentry.io/api/0"
+
+# =============================================================================
+# Issue Filtering
+# =============================================================================
+filters:
+  # Minimum number of events for an issue to be considered
+  # Env: BUGHAWK_FILTER_MIN_EVENTS
+  # Default: 1
+  min_events: 1
+
+  # Severity levels to include
+  # Options: debug, info, warning, error, fatal
+  # Default: [error, fatal]
+  severity_levels:
+    - error
+    - fatal
+
+  # Maximum age of issues in days
+  # Env: BUGHAWK_FILTER_MAX_AGE_DAYS
+  # Default: 30
+  max_age_days: 30
+
+  # List of issue IDs to ignore (optional)
+  ignored_issues: []
+    # - "1234567890"
+
+# =============================================================================
+# LLM Provider Configuration
+# =============================================================================
+# BugHawk supports multiple LLM providers. Choose the one that best fits your needs.
+# Run `bughawk providers` to see all available providers and their default models.
+
+llm:
+  # LLM provider to use for code analysis and fixes
+  # Options: openai, anthropic, claude (alias for anthropic), azure, gemini, ollama, groq, mistral, cohere
+  # Env: BUGHAWK_LLM_PROVIDER
+  # Default: openai
+  provider: openai
+
+  # API key for the LLM provider (required for most providers, not for ollama)
+  # Env: BUGHAWK_LLM_API_KEY
+  api_key: ""
+
+  # Model name to use (if empty, uses provider default)
+  # Env: BUGHAWK_LLM_MODEL
+  # Default models per provider:
+  #   OpenAI:    gpt-4, gpt-4-turbo, gpt-4o, gpt-3.5-turbo
+  #   Anthropic: claude-sonnet-4-20250514, claude-3-5-sonnet-20241022, claude-3-opus-20240229
+  #   Azure:     Uses deployment name
+  #   Gemini:    gemini-1.5-pro, gemini-1.5-flash, gemini-pro
+  #   Ollama:    llama3.1, codellama, mistral, mixtral
+  #   Groq:      llama-3.1-70b-versatile, llama-3.1-8b-instant, mixtral-8x7b-32768
+  #   Mistral:   mistral-large-latest, mistral-medium-latest, codestral-latest
+  #   Cohere:    command-r-plus, command-r, command
+  model: ""
+
+  # Maximum tokens for LLM responses
+  # Env: BUGHAWK_LLM_MAX_TOKENS
+  # Default: 4096
+  max_tokens: 4096
+
+  # Temperature for generation (0.0 = deterministic, 2.0 = creative)
+  # Env: BUGHAWK_LLM_TEMPERATURE
+  # Default: 0.1
+  temperature: 0.1
+
+  # -----------------------------------------------------------------------------
+  # Azure OpenAI Settings (only required when provider: azure)
+  # -----------------------------------------------------------------------------
+  # Azure OpenAI endpoint URL
+  # Env: BUGHAWK_LLM_AZURE_ENDPOINT
+  azure_endpoint: ""
+
+  # Azure OpenAI deployment name
+  # Env: BUGHAWK_LLM_AZURE_DEPLOYMENT
+  azure_deployment: ""
+
+  # Azure API version
+  # Env: BUGHAWK_LLM_AZURE_API_VERSION
+  # Default: 2024-02-15-preview
+  azure_api_version: "2024-02-15-preview"
+
+  # -----------------------------------------------------------------------------
+  # Ollama Settings (only required when provider: ollama)
+  # -----------------------------------------------------------------------------
+  # Ollama server URL (for local inference)
+  # Env: BUGHAWK_LLM_OLLAMA_BASE_URL
+  # Default: http://localhost:11434
+  ollama_base_url: "http://localhost:11434"
+
+# =============================================================================
+# Git Configuration
+# =============================================================================
+git:
+  # Git provider for creating PRs
+  # Options: github, gitlab, bitbucket
+  # Env: BUGHAWK_GIT_PROVIDER
+  # Default: github
+  provider: github
+
+  # Personal access token for git operations
+  # Env: BUGHAWK_GIT_TOKEN
+  # Required scopes:
+  #   GitHub: repo, workflow
+  #   GitLab: api, read_repository, write_repository
+  token: ""
+
+  # Prefix for auto-created branches
+  # Env: BUGHAWK_GIT_BRANCH_PREFIX
+  # Default: bughawk/fix-
+  branch_prefix: "bughawk/fix-"
+
+  # Automatically create pull requests after fixes
+  # Env: BUGHAWK_GIT_AUTO_PR
+  # Default: false
+  auto_pr: false
+
+  # Base branch for pull requests
+  # Env: BUGHAWK_GIT_BASE_BRANCH
+  # Default: main
+  base_branch: "main"
+
+# =============================================================================
+# General Settings
+# =============================================================================
+
+# Enable debug mode for verbose output
+# Env: BUGHAWK_DEBUG
+# Default: false
+debug: false
+
+# Output directory for reports and temporary files
+# Env: BUGHAWK_OUTPUT_DIR
+# Default: .bughawk
+output_dir: ".bughawk"

@@ -1,0 +1,797 @@
+{
+  "version": "1.0",
+  "description": "BugHawk error pattern catalog - the hawk's prey profiles. These patterns represent common bugs that can be quickly identified and fixed.",
+  "patterns": [
+    {
+      "id": "py_attribute_none",
+      "name": "NoneType AttributeError",
+      "category": "null_reference",
+      "description": "Attempting to access an attribute or method on a None value. This is one of the most common Python errors.",
+      "exception_types": ["AttributeError"],
+      "message_patterns": [
+        "'NoneType' object has no attribute '\\w+'",
+        "None has no attribute",
+        "NoneType.*has no attribute"
+      ],
+      "code_patterns": [
+        "\\w+\\.\\w+",
+        "\\w+\\.\\w+\\(\\)"
+      ],
+      "common_causes": [
+        "Function returned None unexpectedly (e.g., failed lookup)",
+        "Variable not properly initialized before use",
+        "API call or database query returned None instead of expected object",
+        "Chained method call where intermediate result is None",
+        "Optional parameter defaulting to None"
+      ],
+      "typical_fixes": [
+        {
+          "description": "Add explicit None check before access",
+          "code_template": "if obj is not None:\n    result = obj.attribute\nelse:\n    result = default_value",
+          "explanation": "Explicitly check for None before accessing attributes to prevent the error.",
+          "caveats": [
+            "Consider why the value is None - it may indicate a bug elsewhere",
+            "Don't just hide the error - understand root cause"
+          ]
+        },
+        {
+          "description": "Use getattr with default",
+          "code_template": "result = getattr(obj, 'attribute', default_value)",
+          "explanation": "getattr() returns a default value if attribute doesn't exist or obj is None.",
+          "caveats": [
+            "This won't prevent None propagation if default is also None"
+          ]
+        },
+        {
+          "description": "Use Optional type hints and early return",
+          "code_template": "def process(obj: Optional[MyClass]) -> Optional[str]:\n    if obj is None:\n        return None\n    return obj.attribute",
+          "explanation": "Make None handling explicit with type hints and early returns.",
+          "caveats": []
+        }
+      ],
+      "examples": [
+        {
+          "error": "'NoneType' object has no attribute 'name'",
+          "code": "user = get_user(id)\nprint(user.name)",
+          "fix": "user = get_user(id)\nif user:\n    print(user.name)"
+        },
+        {
+          "error": "'NoneType' object has no attribute 'strip'",
+          "code": "data.get('field').strip()",
+          "fix": "(data.get('field') or '').strip()"
+        }
+      ],
+      "languages": ["python"],
+      "severity": "high",
+      "documentation_links": [
+        "https://docs.python.org/3/library/exceptions.html#AttributeError"
+      ]
+    },
+    {
+      "id": "py_key_error",
+      "name": "Dictionary KeyError",
+      "category": "key_not_found",
+      "description": "Accessing a dictionary with a key that doesn't exist. Common when working with JSON/API data.",
+      "exception_types": ["KeyError"],
+      "message_patterns": [
+        "KeyError:",
+        "KeyError\\(['\"]\\w+['\"]\\)",
+        "KeyError: ['\"]\\w+['\"]"
+      ],
+      "code_patterns": [
+        "\\w+\\[['\"]\\w+['\"]\\]",
+        "\\w+\\[\\w+\\]"
+      ],
+      "common_causes": [
+        "Key name typo or case mismatch",
+        "Optional field missing in API response",
+        "Data structure changed but code wasn't updated",
+        "Assuming key exists without validation"
+      ],
+      "typical_fixes": [
+        {
+          "description": "Use .get() method with default value",
+          "code_template": "value = data.get('key', default_value)",
+          "explanation": "The .get() method returns None (or specified default) if key doesn't exist.",
+          "caveats": [
+            "Choose an appropriate default value for your use case",
+            "None as default may cause issues downstream"
+          ]
+        },
+        {
+          "description": "Check key existence with 'in' operator",
+          "code_template": "if 'key' in data:\n    value = data['key']\nelse:\n    value = default_value",
+          "explanation": "Explicitly check if key exists before accessing it.",
+          "caveats": []
+        },
+        {
+          "description": "Use try/except for KeyError",
+          "code_template": "try:\n    value = data['key']\nexcept KeyError:\n    value = default_value",
+          "explanation": "Catch the exception and handle missing key gracefully.",
+          "caveats": [
+            "More verbose but clearer intent",
+            "Better for deeply nested access"
+          ]
+        }
+      ],
+      "examples": [
+        {
+          "error": "KeyError: 'username'",
+          "code": "username = response['username']",
+          "fix": "username = response.get('username', 'anonymous')"
+        }
+      ],
+      "languages": ["python"],
+      "severity": "medium",
+      "documentation_links": []
+    },
+    {
+      "id": "py_index_error",
+      "name": "List Index Out of Range",
+      "category": "index_out_of_bounds",
+      "description": "Accessing a list or tuple with an index that exceeds its length.",
+      "exception_types": ["IndexError"],
+      "message_patterns": [
+        "list index out of range",
+        "tuple index out of range",
+        "IndexError:"
+      ],
+      "code_patterns": [
+        "\\w+\\[\\d+\\]",
+        "\\w+\\[-?\\d+\\]",
+        "\\w+\\[\\w+\\]"
+      ],
+      "common_causes": [
+        "Empty list/tuple not checked before access",
+        "Off-by-one error in loop or calculation",
+        "Hardcoded index assuming minimum length",
+        "Pop from empty list",
+        "Negative index exceeding list length"
+      ],
+      "typical_fixes": [
+        {
+          "description": "Check length before accessing",
+          "code_template": "if len(items) > index:\n    value = items[index]\nelse:\n    value = default_value",
+          "explanation": "Validate that the index is within bounds before accessing.",
+          "caveats": [
+            "Consider if empty list is a valid state or indicates bug"
+          ]
+        },
+        {
+          "description": "Use try/except",
+          "code_template": "try:\n    value = items[index]\nexcept IndexError:\n    value = default_value",
+          "explanation": "Catch the exception and provide fallback value.",
+          "caveats": []
+        },
+        {
+          "description": "Use conditional expression for first/last element",
+          "code_template": "first = items[0] if items else None\nlast = items[-1] if items else None",
+          "explanation": "Check for empty list inline when accessing first/last elements.",
+          "caveats": []
+        }
+      ],
+      "examples": [
+        {
+          "error": "IndexError: list index out of range",
+          "code": "first_item = results[0]",
+          "fix": "first_item = results[0] if results else None"
+        }
+      ],
+      "languages": ["python"],
+      "severity": "medium",
+      "documentation_links": []
+    },
+    {
+      "id": "py_type_error_arg",
+      "name": "TypeError - Wrong Argument Type",
+      "category": "type_error",
+      "description": "Function received an argument of unexpected type.",
+      "exception_types": ["TypeError"],
+      "message_patterns": [
+        "expected .* got",
+        "must be .* not",
+        "argument .* must be",
+        "takes .* positional argument",
+        "missing .* required positional argument",
+        "got an unexpected keyword argument"
+      ],
+      "code_patterns": [
+        "\\w+\\(.*\\)"
+      ],
+      "common_causes": [
+        "Passing None where object expected",
+        "Passing string where number expected (or vice versa)",
+        "Wrong number of arguments to function",
+        "Positional/keyword argument mismatch",
+        "API response type different than expected"
+      ],
+      "typical_fixes": [
+        {
+          "description": "Add type validation/conversion",
+          "code_template": "if isinstance(value, expected_type):\n    result = func(value)\nelse:\n    value = expected_type(value)  # or handle error",
+          "explanation": "Validate or convert the type before passing to function.",
+          "caveats": [
+            "Type conversion may fail or lose data"
+          ]
+        },
+        {
+          "description": "Use type hints and mypy for static checking",
+          "code_template": "def func(value: int) -> str:\n    return str(value)",
+          "explanation": "Add type hints and use static type checker to catch errors before runtime.",
+          "caveats": []
+        }
+      ],
+      "examples": [
+        {
+          "error": "TypeError: can't multiply sequence by non-int of type 'str'",
+          "code": "result = items * count",
+          "fix": "result = items * int(count)"
+        }
+      ],
+      "languages": ["python"],
+      "severity": "medium",
+      "documentation_links": []
+    },
+    {
+      "id": "py_zero_division",
+      "name": "Division by Zero",
+      "category": "division_by_zero",
+      "description": "Attempting to divide a number by zero.",
+      "exception_types": ["ZeroDivisionError"],
+      "message_patterns": [
+        "division by zero",
+        "ZeroDivisionError",
+        "integer division or modulo by zero",
+        "float division by zero"
+      ],
+      "code_patterns": [
+        "\\w+\\s*/\\s*\\w+",
+        "\\w+\\s*//\\s*\\w+",
+        "\\w+\\s*%\\s*\\w+"
+      ],
+      "common_causes": [
+        "Divisor variable is zero (unvalidated input)",
+        "Empty collection length used as divisor",
+        "Counter or accumulator not incremented",
+        "Edge case in mathematical calculation"
+      ],
+      "typical_fixes": [
+        {
+          "description": "Check divisor before division",
+          "code_template": "if divisor != 0:\n    result = numerator / divisor\nelse:\n    result = 0  # or appropriate default",
+          "explanation": "Always validate divisor is non-zero before division.",
+          "caveats": [
+            "Choose appropriate default or error handling for zero case"
+          ]
+        },
+        {
+          "description": "Use try/except",
+          "code_template": "try:\n    result = numerator / divisor\nexcept ZeroDivisionError:\n    result = 0  # or float('inf') or raise custom error",
+          "explanation": "Catch the exception and handle appropriately.",
+          "caveats": []
+        }
+      ],
+      "examples": [
+        {
+          "error": "ZeroDivisionError: division by zero",
+          "code": "average = total / count",
+          "fix": "average = total / count if count > 0 else 0"
+        }
+      ],
+      "languages": ["python"],
+      "severity": "high",
+      "documentation_links": []
+    },
+    {
+      "id": "py_import_error",
+      "name": "Import/Module Not Found Error",
+      "category": "import_error",
+      "description": "Python cannot find or import a module.",
+      "exception_types": ["ImportError", "ModuleNotFoundError"],
+      "message_patterns": [
+        "No module named",
+        "ModuleNotFoundError",
+        "cannot import name",
+        "ImportError:"
+      ],
+      "code_patterns": [
+        "^import\\s+\\w+",
+        "^from\\s+\\w+\\s+import"
+      ],
+      "common_causes": [
+        "Package not installed in environment",
+        "Typo in module name",
+        "Circular import dependency",
+        "Module file in wrong location",
+        "Virtual environment not activated",
+        "Missing __init__.py file"
+      ],
+      "typical_fixes": [
+        {
+          "description": "Install missing package",
+          "code_template": "pip install package_name\n# or\npoetry add package_name",
+          "explanation": "Install the missing package in your environment.",
+          "caveats": [
+            "Make sure you're in the correct virtual environment"
+          ]
+        },
+        {
+          "description": "Fix circular import",
+          "code_template": "# Move import inside function\ndef my_function():\n    from module import something\n    # use something",
+          "explanation": "Circular imports can be resolved by moving imports inside functions.",
+          "caveats": [
+            "Consider refactoring to eliminate circular dependency"
+          ]
+        },
+        {
+          "description": "Check PYTHONPATH and package structure",
+          "code_template": "# Ensure __init__.py exists in package directories\n# Verify PYTHONPATH includes your project root",
+          "explanation": "Python needs proper package structure to find modules.",
+          "caveats": []
+        }
+      ],
+      "examples": [
+        {
+          "error": "ModuleNotFoundError: No module named 'requests'",
+          "code": "import requests",
+          "fix": "pip install requests"
+        }
+      ],
+      "languages": ["python"],
+      "severity": "high",
+      "documentation_links": []
+    },
+    {
+      "id": "py_value_error",
+      "name": "ValueError - Invalid Value",
+      "category": "value_error",
+      "description": "Function received correct type but inappropriate value.",
+      "exception_types": ["ValueError"],
+      "message_patterns": [
+        "ValueError:",
+        "invalid literal for int\\(\\)",
+        "could not convert string to float",
+        "not enough values to unpack",
+        "too many values to unpack",
+        "is not in list"
+      ],
+      "code_patterns": [
+        "int\\(",
+        "float\\(",
+        "\\.index\\(",
+        "\\.remove\\("
+      ],
+      "common_causes": [
+        "Converting invalid string to number",
+        "Unpacking wrong number of values",
+        "Searching for item not in list",
+        "Invalid argument to function"
+      ],
+      "typical_fixes": [
+        {
+          "description": "Validate before conversion",
+          "code_template": "if value.isdigit():\n    num = int(value)\nelse:\n    num = 0  # default or raise error",
+          "explanation": "Check if string is valid number before converting.",
+          "caveats": [
+            "isdigit() doesn't handle negatives or floats"
+          ]
+        },
+        {
+          "description": "Use try/except for conversion",
+          "code_template": "try:\n    num = int(value)\nexcept ValueError:\n    num = default_value",
+          "explanation": "Catch conversion errors and provide fallback.",
+          "caveats": []
+        }
+      ],
+      "examples": [
+        {
+          "error": "ValueError: invalid literal for int() with base 10: 'abc'",
+          "code": "count = int(user_input)",
+          "fix": "try:\n    count = int(user_input)\nexcept ValueError:\n    count = 0"
+        }
+      ],
+      "languages": ["python"],
+      "severity": "medium",
+      "documentation_links": []
+    },
+    {
+      "id": "js_undefined_property",
+      "name": "Cannot Read Property of Undefined",
+      "category": "null_reference",
+      "description": "Attempting to access a property on undefined or null in JavaScript.",
+      "exception_types": ["TypeError"],
+      "message_patterns": [
+        "Cannot read propert.*of undefined",
+        "Cannot read propert.*of null",
+        "undefined is not an object",
+        "null is not an object",
+        "\\.\\w+ is not a function"
+      ],
+      "code_patterns": [
+        "\\w+\\.\\w+",
+        "\\w+\\?\\.\\w+"
+      ],
+      "common_causes": [
+        "API response missing expected property",
+        "Async data not loaded yet",
+        "Object not initialized before use",
+        "Destructuring undefined object"
+      ],
+      "typical_fixes": [
+        {
+          "description": "Use optional chaining (?.) operator",
+          "code_template": "const value = obj?.property?.nested;",
+          "explanation": "Optional chaining returns undefined instead of throwing if property doesn't exist.",
+          "caveats": [
+            "Requires modern JavaScript/TypeScript"
+          ]
+        },
+        {
+          "description": "Use nullish coalescing (??) for defaults",
+          "code_template": "const value = obj?.property ?? defaultValue;",
+          "explanation": "Combine optional chaining with nullish coalescing for safe access with default.",
+          "caveats": []
+        },
+        {
+          "description": "Add explicit null check",
+          "code_template": "if (obj && obj.property) {\n  // safe to use obj.property\n}",
+          "explanation": "Explicitly check for null/undefined before accessing properties.",
+          "caveats": []
+        }
+      ],
+      "examples": [
+        {
+          "error": "TypeError: Cannot read property 'name' of undefined",
+          "code": "const name = user.profile.name;",
+          "fix": "const name = user?.profile?.name ?? 'Unknown';"
+        }
+      ],
+      "languages": ["javascript", "typescript"],
+      "severity": "high",
+      "documentation_links": []
+    },
+    {
+      "id": "js_async_not_awaited",
+      "name": "Promise Not Awaited",
+      "category": "async_error",
+      "description": "Async function called without await, resulting in Promise instead of value.",
+      "exception_types": ["TypeError", "UnhandledPromiseRejection"],
+      "message_patterns": [
+        "is not a function",
+        "\\[object Promise\\]",
+        "Cannot read property.*Promise",
+        "Unhandled promise rejection",
+        "then is not defined"
+      ],
+      "code_patterns": [
+        "async\\s+function",
+        "await\\s+\\w+",
+        "\\.then\\(",
+        "Promise\\."
+      ],
+      "common_causes": [
+        "Forgot to add 'await' keyword",
+        "Using async function result synchronously",
+        "Missing async keyword on calling function",
+        "Callback not properly handling Promise"
+      ],
+      "typical_fixes": [
+        {
+          "description": "Add await keyword",
+          "code_template": "const result = await asyncFunction();",
+          "explanation": "Use await to wait for Promise to resolve before using result.",
+          "caveats": [
+            "Calling function must also be async"
+          ]
+        },
+        {
+          "description": "Make parent function async",
+          "code_template": "async function parentFunction() {\n  const result = await asyncFunction();\n  return result;\n}",
+          "explanation": "Mark the parent function as async to enable await usage.",
+          "caveats": []
+        },
+        {
+          "description": "Use .then() for Promise handling",
+          "code_template": "asyncFunction().then(result => {\n  // use result\n}).catch(error => {\n  // handle error\n});",
+          "explanation": "Use Promise .then() chain if you can't use async/await.",
+          "caveats": []
+        }
+      ],
+      "examples": [
+        {
+          "error": "TypeError: data.map is not a function (data is Promise)",
+          "code": "const data = fetchData();\ndata.map(item => ...);",
+          "fix": "const data = await fetchData();\ndata.map(item => ...);"
+        }
+      ],
+      "languages": ["javascript", "typescript"],
+      "severity": "high",
+      "documentation_links": []
+    },
+    {
+      "id": "js_array_method_undefined",
+      "name": "Array Method on Non-Array",
+      "category": "type_error",
+      "description": "Calling array methods like map, filter, forEach on undefined or non-array value.",
+      "exception_types": ["TypeError"],
+      "message_patterns": [
+        "\\.map is not a function",
+        "\\.filter is not a function",
+        "\\.forEach is not a function",
+        "\\.reduce is not a function",
+        "\\.find is not a function"
+      ],
+      "code_patterns": [
+        "\\.map\\(",
+        "\\.filter\\(",
+        "\\.forEach\\(",
+        "\\.reduce\\("
+      ],
+      "common_causes": [
+        "API returned object instead of array",
+        "Data not loaded yet (undefined)",
+        "Typo in property access",
+        "Destructuring failed"
+      ],
+      "typical_fixes": [
+        {
+          "description": "Default to empty array",
+          "code_template": "const items = data?.items ?? [];\nitems.map(item => ...);",
+          "explanation": "Use empty array as default to safely call array methods.",
+          "caveats": []
+        },
+        {
+          "description": "Check if array before iterating",
+          "code_template": "if (Array.isArray(items)) {\n  items.map(item => ...);\n}",
+          "explanation": "Verify the value is actually an array before calling array methods.",
+          "caveats": []
+        },
+        {
+          "description": "Ensure array in API response handling",
+          "code_template": "const response = await fetch(url);\nconst data = await response.json();\nconst items = Array.isArray(data) ? data : data.items ?? [];",
+          "explanation": "Handle different API response shapes gracefully.",
+          "caveats": []
+        }
+      ],
+      "examples": [
+        {
+          "error": "TypeError: items.map is not a function",
+          "code": "const list = items.map(x => x.name);",
+          "fix": "const list = (items || []).map(x => x.name);"
+        }
+      ],
+      "languages": ["javascript", "typescript"],
+      "severity": "medium",
+      "documentation_links": []
+    },
+    {
+      "id": "php_undefined_index",
+      "name": "PHP Undefined Array Index",
+      "category": "key_not_found",
+      "description": "Accessing an array key that doesn't exist in PHP.",
+      "exception_types": ["Notice", "Warning", "ErrorException"],
+      "message_patterns": [
+        "Undefined index:",
+        "Undefined array key",
+        "Undefined offset:"
+      ],
+      "code_patterns": [
+        "\\$\\w+\\[['\"]\\w+['\"]\\]",
+        "\\$\\w+\\[\\$\\w+\\]"
+      ],
+      "common_causes": [
+        "Form field not submitted",
+        "API response missing key",
+        "Typo in array key name",
+        "Optional configuration not set"
+      ],
+      "typical_fixes": [
+        {
+          "description": "Use null coalescing operator",
+          "code_template": "$value = $array['key'] ?? $default;",
+          "explanation": "PHP 7+ null coalescing operator returns right side if key doesn't exist.",
+          "caveats": []
+        },
+        {
+          "description": "Check with isset() or array_key_exists()",
+          "code_template": "if (isset($array['key'])) {\n    $value = $array['key'];\n}",
+          "explanation": "Use isset() to check if key exists and is not null.",
+          "caveats": [
+            "isset() returns false for null values"
+          ]
+        },
+        {
+          "description": "Use filter_input for superglobals",
+          "code_template": "$value = filter_input(INPUT_POST, 'key', FILTER_SANITIZE_STRING);",
+          "explanation": "For $_GET, $_POST etc., use filter_input for safe access.",
+          "caveats": []
+        }
+      ],
+      "examples": [
+        {
+          "error": "Notice: Undefined index: username",
+          "code": "$username = $_POST['username'];",
+          "fix": "$username = $_POST['username'] ?? '';"
+        }
+      ],
+      "languages": ["php"],
+      "severity": "medium",
+      "documentation_links": []
+    },
+    {
+      "id": "php_null_method",
+      "name": "PHP Call to Method on Null",
+      "category": "null_reference",
+      "description": "Calling a method on a null value in PHP.",
+      "exception_types": ["Error", "TypeError"],
+      "message_patterns": [
+        "Call to a member function .* on null",
+        "Call to a member function .* on bool"
+      ],
+      "code_patterns": [
+        "\\$\\w+->\\w+\\(",
+        "->\\w+\\(\\)"
+      ],
+      "common_causes": [
+        "Database query returned null (no results)",
+        "Dependency injection failure",
+        "Method chaining on failed operation",
+        "find() or first() returned null"
+      ],
+      "typical_fixes": [
+        {
+          "description": "Use null safe operator (PHP 8+)",
+          "code_template": "$result = $object?->method();",
+          "explanation": "PHP 8's nullsafe operator returns null if object is null.",
+          "caveats": [
+            "Requires PHP 8.0+"
+          ]
+        },
+        {
+          "description": "Check for null before calling method",
+          "code_template": "if ($object !== null) {\n    $result = $object->method();\n}",
+          "explanation": "Explicitly check for null before method call.",
+          "caveats": []
+        },
+        {
+          "description": "Use optional() helper (Laravel)",
+          "code_template": "$result = optional($object)->method();",
+          "explanation": "Laravel's optional() helper safely handles null objects.",
+          "caveats": [
+            "Laravel specific"
+          ]
+        }
+      ],
+      "examples": [
+        {
+          "error": "Call to a member function getName() on null",
+          "code": "$user = User::find($id);\necho $user->getName();",
+          "fix": "$user = User::find($id);\necho $user?->getName() ?? 'Unknown';"
+        }
+      ],
+      "languages": ["php"],
+      "severity": "high",
+      "documentation_links": []
+    },
+    {
+      "id": "connection_timeout",
+      "name": "Connection Timeout Error",
+      "category": "timeout_error",
+      "description": "Network request timed out waiting for response.",
+      "exception_types": ["TimeoutError", "ConnectTimeoutError", "ReadTimeoutError", "ConnectionError"],
+      "message_patterns": [
+        "timed out",
+        "timeout",
+        "Connection timed out",
+        "Read timed out",
+        "connect ETIMEDOUT",
+        "ESOCKETTIMEDOUT"
+      ],
+      "code_patterns": [
+        "requests\\.",
+        "fetch\\(",
+        "axios\\.",
+        "http\\.request",
+        "curl_"
+      ],
+      "common_causes": [
+        "Server is slow or overloaded",
+        "Network connectivity issues",
+        "Timeout value too short",
+        "DNS resolution failure",
+        "Firewall blocking connection"
+      ],
+      "typical_fixes": [
+        {
+          "description": "Increase timeout value",
+          "code_template": "# Python\nresponse = requests.get(url, timeout=30)\n\n// JavaScript\naxios.get(url, { timeout: 30000 })",
+          "explanation": "Set a longer timeout for slow operations.",
+          "caveats": [
+            "Don't set timeout too high - may hide real issues"
+          ]
+        },
+        {
+          "description": "Add retry logic",
+          "code_template": "from tenacity import retry, stop_after_attempt\n\n@retry(stop=stop_after_attempt(3))\ndef fetch_data():\n    return requests.get(url, timeout=10)",
+          "explanation": "Retry failed requests automatically.",
+          "caveats": [
+            "Be careful with retrying non-idempotent operations"
+          ]
+        },
+        {
+          "description": "Implement circuit breaker pattern",
+          "code_template": "# Use circuit breaker for external service calls\n# to fail fast when service is down",
+          "explanation": "Circuit breaker prevents repeated calls to failing services.",
+          "caveats": []
+        }
+      ],
+      "examples": [
+        {
+          "error": "requests.exceptions.ConnectTimeout",
+          "code": "response = requests.get(url)",
+          "fix": "response = requests.get(url, timeout=30)"
+        }
+      ],
+      "languages": ["python", "javascript", "typescript", "php"],
+      "severity": "high",
+      "documentation_links": []
+    },
+    {
+      "id": "json_decode_error",
+      "name": "JSON Decode Error",
+      "category": "value_error",
+      "description": "Failed to parse JSON data.",
+      "exception_types": ["JSONDecodeError", "ValueError", "SyntaxError"],
+      "message_patterns": [
+        "JSONDecodeError",
+        "JSON.parse",
+        "Expecting value",
+        "Unexpected token",
+        "json_decode\\(\\): Argument",
+        "Syntax error, malformed JSON"
+      ],
+      "code_patterns": [
+        "json\\.loads\\(",
+        "JSON\\.parse\\(",
+        "json_decode\\("
+      ],
+      "common_causes": [
+        "Empty response body",
+        "HTML error page instead of JSON",
+        "Invalid JSON syntax in source",
+        "BOM or whitespace before JSON",
+        "Single quotes instead of double quotes"
+      ],
+      "typical_fixes": [
+        {
+          "description": "Validate response before parsing",
+          "code_template": "# Python\nif response.text:\n    data = response.json()\nelse:\n    data = {}\n\n// JavaScript\nconst text = await response.text();\nconst data = text ? JSON.parse(text) : {};",
+          "explanation": "Check that response has content before parsing as JSON.",
+          "caveats": []
+        },
+        {
+          "description": "Handle parsing errors gracefully",
+          "code_template": "try:\n    data = json.loads(text)\nexcept json.JSONDecodeError as e:\n    logger.error(f'Invalid JSON: {e}')\n    data = {}",
+          "explanation": "Catch and handle JSON parsing errors.",
+          "caveats": []
+        },
+        {
+          "description": "Check Content-Type header",
+          "code_template": "if 'application/json' in response.headers.get('Content-Type', ''):\n    data = response.json()\nelse:\n    raise ValueError(f'Expected JSON, got {response.headers.get(\"Content-Type\")}')",
+          "explanation": "Verify response is actually JSON before parsing.",
+          "caveats": []
+        }
+      ],
+      "examples": [
+        {
+          "error": "json.decoder.JSONDecodeError: Expecting value",
+          "code": "data = json.loads(response.text)",
+          "fix": "data = json.loads(response.text) if response.text else {}"
+        }
+      ],
+      "languages": ["python", "javascript", "typescript", "php"],
+      "severity": "medium",
+      "documentation_links": []
+    }
+  ]
+}

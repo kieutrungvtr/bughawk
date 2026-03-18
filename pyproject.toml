@@ -1,0 +1,60 @@
+[tool.poetry]
+name = "bughawk"
+version = "0.1.0"
+description = "Automated Bug Hunting & Fixing"
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+packages = [{include = "bughawk"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+requests = "^2.31.0"
+pydantic = "^2.5.0"
+python-dotenv = "^1.0.0"
+click = "^8.1.0"
+rich = "^13.7.0"
+pyyaml = "^6.0.0"
+pydantic-settings = "^2.1.0"
+gitpython = "^3.1.0"
+thefuzz = "^0.22.0"
+PyGithub = "^2.1.0"
+
+# LLM Providers - Core (at least one required)
+anthropic = { version = "^0.39.0", optional = true }
+openai = { version = "^1.0.0", optional = true }
+
+# LLM Providers - Additional (optional)
+google-generativeai = { version = "^0.8.0", optional = true }
+groq = { version = "^0.11.0", optional = true }
+mistralai = { version = "^1.0.0", optional = true }
+cohere = { version = "^5.0.0", optional = true }
+
+[tool.poetry.extras]
+# Individual providers
+openai = ["openai"]
+anthropic = ["anthropic"]
+azure = ["openai"]  # Azure uses openai package
+gemini = ["google-generativeai"]
+groq = ["groq"]
+mistral = ["mistralai"]
+cohere = ["cohere"]
+ollama = []  # No additional dependencies, uses requests
+
+# Provider bundles
+all-providers = ["openai", "anthropic", "google-generativeai", "groq", "mistralai", "cohere"]
+cloud = ["openai", "anthropic", "google-generativeai", "groq", "mistralai", "cohere"]
+default = ["openai", "anthropic"]
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+
+[tool.poetry.scripts]
+bughawk = "bughawk.cli:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
