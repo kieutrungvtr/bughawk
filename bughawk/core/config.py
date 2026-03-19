@@ -141,6 +141,29 @@ class GitConfig(BaseModel):
     branch_prefix: str = Field(default="bughawk/fix-", description="Prefix for auto-created branches")
     auto_pr: bool = Field(default=False, description="Automatically create pull requests")
     base_branch: str = Field(default="main", description="Base branch for PRs")
+    remote: str = Field(default="origin", description="Git remote to push to (e.g., origin, upstream)")
+
+
+class NotificationChannelConfig(BaseModel):
+    """Configuration for a single notification channel."""
+
+    name: str = Field(default="", description="Channel name for identification")
+    enabled: bool = Field(default=True, description="Enable this channel")
+    webhook_url: str = Field(default="", description="Webhook URL")
+    environment: str = Field(default="production", description="Environment: dev, staging, production")
+    mention_users: list[str] = Field(default_factory=list, description="User IDs to mention")
+    mention_groups: list[str] = Field(default_factory=list, description="Group IDs to mention")
+
+
+class NotificationsConfig(BaseModel):
+    """Notifications configuration - supports multiple channels."""
+
+    slack: NotificationChannelConfig = Field(default_factory=NotificationChannelConfig)
+    teams: NotificationChannelConfig = Field(default_factory=NotificationChannelConfig)
+    discord: NotificationChannelConfig = Field(default_factory=NotificationChannelConfig)
+    custom_webhooks: list[NotificationChannelConfig] = Field(
+        default_factory=list, description="Additional custom webhook endpoints"
+    )
 
 
 class BugHawkConfig(BaseModel):
@@ -159,6 +182,7 @@ class BugHawkConfig(BaseModel):
     filters: FilterConfig = Field(default_factory=FilterConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     git: GitConfig = Field(default_factory=GitConfig)
+    notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
     debug: bool = Field(default=False, description="Enable debug mode")
     output_dir: Path = Field(default=Path(".bughawk"), description="Output directory for reports")
 
@@ -299,6 +323,14 @@ def _load_env_config() -> dict[str, Any]:
         "BUGHAWK_GIT_AUTO_PR": ("git", "auto_pr"),
         "BUGHAWK_GIT_BASE_BRANCH": ("git", "base_branch"),
 
+        # Notification configuration
+        "BUGHAWK_SLACK_WEBHOOK_URL": ("notifications", "slack", "webhook_url"),
+        "BUGHAWK_SLACK_ENABLED": ("notifications", "slack", "enabled"),
+        "BUGHAWK_TEAMS_WEBHOOK_URL": ("notifications", "teams", "webhook_url"),
+        "BUGHAWK_TEAMS_ENABLED": ("notifications", "teams", "enabled"),
+        "BUGHAWK_DISCORD_WEBHOOK_URL": ("notifications", "discord", "webhook_url"),
+        "BUGHAWK_DISCORD_ENABLED": ("notifications", "discord", "enabled"),
+
         # General configuration
         "BUGHAWK_DEBUG": ("debug",),
         "BUGHAWK_OUTPUT_DIR": ("output_dir",),
@@ -314,16 +346,22 @@ def _load_env_config() -> dict[str, Any]:
                 value = int(value)
             elif env_var == "BUGHAWK_LLM_TEMPERATURE":
                 value = float(value)
-            elif env_var in ("BUGHAWK_DEBUG", "BUGHAWK_GIT_AUTO_PR"):
+            elif env_var in ("BUGHAWK_DEBUG", "BUGHAWK_GIT_AUTO_PR", "BUGHAWK_SLACK_ENABLED", "BUGHAWK_TEAMS_ENABLED", "BUGHAWK_DISCORD_ENABLED"):
                 value = value.lower() in ("true", "1", "yes")
 
-            # Set nested value
+            # Set nested value (supports up to 3 levels)
             if len(path) == 1:
                 config[path[0]] = value
-            else:
+            elif len(path) == 2:
                 if path[0] not in config:
                     config[path[0]] = {}
                 config[path[0]][path[1]] = value
+            elif len(path) == 3:
+                if path[0] not in config:
+                    config[path[0]] = {}
+                if path[1] not in config[path[0]]:
+                    config[path[0]][path[1]] = {}
+                config[path[0]][path[1]][path[2]] = value
 
     return config
 

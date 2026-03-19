@@ -304,7 +304,7 @@ class Orchestrator:
             self._llm_client = LLMClient(
                 provider=provider,
                 api_key=self.config.llm.api_key,
-                model=self.config.llm.model,
+                config=self.config.llm,
             )
         return self._llm_client
 
@@ -406,10 +406,11 @@ class Orchestrator:
 
             # Get latest event for stack trace
             events = self.monitor_client.get_issue_events(issue_id, limit=1, full=True)
-            stack_trace = self._extract_stack_trace(events[0] if events else None)
+            event = events[0] if events else None
+            stack_trace = self._extract_stack_trace(event)
 
-            # Build code context
-            code_context = self._build_code_context(issue, repo_path, stack_trace)
+            # Build code context (uses ContextResolver with Phase 1/2 approach)
+            code_context = self._build_code_context(issue, repo_path, stack_trace, event)
             logger.info(f"Built context for: {code_context.file_path}")
             console.print(f"   Target file: [cyan]{code_context.file_path}[/]")
 
@@ -418,9 +419,9 @@ class Orchestrator:
             console.print(f"\n🦅 [bold gold1]{self.PHASE_MESSAGES[HuntPhase.RECOGNIZING]}[/]")
 
             pattern_match = self.pattern_matcher.match_pattern(
-                exception_type=stack_trace.exception_type if stack_trace else "",
-                message=issue.title,
-                code_snippet=code_context.file_content[:1000] if code_context.file_content else "",
+                issue=issue,
+                stack_trace=stack_trace,
+                code_context=code_context.file_content[:1000] if code_context and code_context.file_content else None,
             )
 
             if pattern_match:
@@ -497,9 +498,10 @@ class Orchestrator:
             )
             console.print(f"   Committed: [dim]{commit_info.sha[:8]}[/]")
 
-            # Push branch
-            self.repo_manager.push_branch(repo_path, branch_name)
-            console.print("   Pushed to remote")
+            # Push branch to configured remote
+            push_remote = self.config.git.remote
+            self.repo_manager.push_branch(repo_path, branch_name, remote=push_remote)
+            console.print(f"   Pushed to remote: [cyan]{push_remote}[/]")
 
             # Phase 8: Mark territory - Create PR and update Sentry
             state = self._update_phase(state, HuntPhase.MARKING)
@@ -519,6 +521,16 @@ class Orchestrator:
             )
             state.pr_url = pr_url
             console.print(f"   PR created: [link={pr_url}]{pr_url}[/link]")
+
+            # Send notifications
+            self._send_pr_notification(
+                pr_url=pr_url,
+                pr_title=pr_creator.format_pr_title(issue),
+                issue=issue,
+                repo_name=repo_full_name,
+                branch_name=branch_name,
+                fix_proposal=fix_proposal,
+            )
 
             state.result = HuntResult.SUCCESS
             self._save_hunt_state(state)
@@ -785,14 +797,36 @@ class Orchestrator:
         return None
 
     def _extract_repo_full_name(self, repo_url: str) -> str:
-        """Extract owner/repo from URL."""
+        """Extract owner/repo from URL.
+
+        If repo_url is a local path, gets the repo name from the configured
+        remote's URL.
+        """
+        from pathlib import Path
+        from urllib.parse import urlparse
+
+        # Check if repo_url is a local path
+        local_path = Path(repo_url)
+        if local_path.exists() and local_path.is_dir():
+            try:
+                from git import Repo
+                repo = Repo(local_path)
+                # Get URL from configured remote (origin by default)
+                remote_name = self.config.git.remote
+                if remote_name in [r.name for r in repo.remotes]:
+                    repo_url = repo.remote(remote_name).url
+                elif repo.remotes:
+                    # Fallback to first available remote
+                    repo_url = repo.remotes[0].url
+            except Exception:
+                pass
+
         # Handle SSH URLs
         if repo_url.startswith("git@"):
             # git@github.com:owner/repo.git
             path = repo_url.split(":")[-1]
         else:
             # HTTPS URLs
-            from urllib.parse import urlparse
             parsed = urlparse(repo_url)
             path = parsed.path
 
@@ -847,9 +881,110 @@ class Orchestrator:
         issue: SentryIssue,
         repo_path: Path,
         stack_trace: Optional[StackTrace],
+        event: Optional[Dict[str, Any]] = None,
     ) -> CodeContext:
-        """Build code context for the issue."""
-        # Find the main file from stack trace or culprit
+        """Build code context for the issue.
+
+        Uses a two-phase approach:
+        1. Phase 1: Try to extract context from stacktrace (high confidence)
+        2. Phase 2: Search codebase if no stacktrace available (lower confidence)
+        """
+        # Try using ContextResolver for unified context resolution
+        try:
+            from bughawk.context import ContextResolver
+
+            resolver = ContextResolver()
+            result = resolver.resolve(issue, event, repo_path)
+
+            if result.success and result.context:
+                ctx = result.context
+                logger.info(
+                    "Context resolved via %s (confidence=%.0f%%): %s",
+                    ctx.source.value,
+                    ctx.confidence * 100,
+                    ctx.primary_file.path if ctx.primary_file else "no primary file",
+                )
+
+                # Convert IssueContext to CodeContext
+                if ctx.primary_file and ctx.primary_file.absolute_path:
+                    file_content = ctx.primary_file.absolute_path.read_text(
+                        encoding="utf-8", errors="replace"
+                    )
+
+                    # Build surrounding lines from snippets
+                    surrounding_lines: Dict[int, str] = {}
+                    if ctx.primary_file.snippets:
+                        snippet = ctx.primary_file.snippets[0]
+                        lines = snippet.content.split("\n")
+                        for i, line in enumerate(lines):
+                            surrounding_lines[snippet.start_line + i] = line
+
+                    return CodeContext(
+                        file_path=ctx.primary_file.path,
+                        file_content=file_content,
+                        error_line=ctx.error_line,
+                        surrounding_lines=surrounding_lines,
+                    )
+                elif ctx.primary_file:
+                    # Try to find the file in repo
+                    found_file = self.code_locator.find_file_in_repo(
+                        repo_path, ctx.primary_file.path
+                    )
+                    if found_file:
+                        file_content = found_file.read_text(
+                            encoding="utf-8", errors="replace"
+                        )
+
+                        surrounding_lines = {}
+                        if ctx.error_line:
+                            lines = file_content.split("\n")
+                            start = max(0, ctx.error_line - 10)
+                            end = min(len(lines), ctx.error_line + 10)
+                            for i in range(start, end):
+                                surrounding_lines[i + 1] = lines[i]
+
+                        return CodeContext(
+                            file_path=str(found_file.relative_to(repo_path)),
+                            file_content=file_content,
+                            error_line=ctx.error_line,
+                            surrounding_lines=surrounding_lines,
+                        )
+
+                # If we have source files but no primary, use the first one
+                if ctx.source_files:
+                    sf = ctx.source_files[0]
+                    found_file = self.code_locator.find_file_in_repo(repo_path, sf.path)
+                    if found_file:
+                        file_content = found_file.read_text(
+                            encoding="utf-8", errors="replace"
+                        )
+                        return CodeContext(
+                            file_path=str(found_file.relative_to(repo_path)),
+                            file_content=file_content,
+                            error_line=sf.snippets[0].highlight_line if sf.snippets else None,
+                            surrounding_lines={},
+                        )
+
+            logger.warning(
+                "ContextResolver failed: %s, falling back to legacy method",
+                result.error if result else "unknown error",
+            )
+
+        except ImportError:
+            logger.debug("Context module not available, using legacy method")
+        except Exception as e:
+            logger.warning("ContextResolver error: %s, falling back to legacy", e)
+
+        # Legacy fallback: original implementation
+        return self._build_code_context_legacy(issue, repo_path, stack_trace)
+
+    def _build_code_context_legacy(
+        self,
+        issue: SentryIssue,
+        repo_path: Path,
+        stack_trace: Optional[StackTrace],
+    ) -> CodeContext:
+        """Legacy method to build code context from stacktrace only."""
         target_file = None
         error_line = None
 
@@ -1007,3 +1142,56 @@ class Orchestrator:
             json.dump(report.to_dict(), f, indent=2)
 
         logger.info(f"Hunt report saved to: {report_file}")
+
+    def _send_pr_notification(
+        self,
+        pr_url: str,
+        pr_title: str,
+        issue: SentryIssue,
+        repo_name: str,
+        branch_name: str,
+        fix_proposal: FixProposal,
+    ) -> None:
+        """Send notifications about the created PR.
+
+        Args:
+            pr_url: URL of the created PR.
+            pr_title: Title of the PR.
+            issue: The Sentry issue being fixed.
+            repo_name: Repository name.
+            branch_name: Branch name.
+            fix_proposal: The proposed fix.
+        """
+        try:
+            # Import here to avoid circular import
+            from bughawk.notifications import NotificationManager, PRNotification
+
+            manager = NotificationManager(self.config.notifications)
+
+            if not manager.has_enabled_channels():
+                logger.debug("No notification channels enabled")
+                return
+
+            notification = PRNotification(
+                pr_url=pr_url,
+                pr_title=pr_title,
+                issue_id=issue.id,
+                issue_title=issue.title,
+                repo_name=repo_name,
+                branch_name=branch_name,
+                confidence_score=fix_proposal.confidence_score,
+                fix_description=fix_proposal.fix_description,
+                sentry_url=issue.metadata.get("url", f"https://sentry.io/issues/{issue.id}/"),
+            )
+
+            results = manager.send_pr_created(notification)
+
+            for channel, success in results.items():
+                if success:
+                    console.print(f"   📢 Notification sent to {channel}")
+                else:
+                    console.print(f"   [yellow]⚠ Failed to notify {channel}[/]")
+
+        except Exception as e:
+            logger.warning(f"Failed to send notifications: {e}")
+            console.print(f"   [yellow]⚠ Notification failed: {e}[/]")

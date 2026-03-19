@@ -423,5 +423,5 @@ class SentryMonitorClient(MonitorClient):
             last_seen=data.get("lastSeen"),
             status=status,
             metadata=data.get("metadata", {}),
-            tags={tag["key"]: tag["value"] for tag in data.get("tags", [])},
+            tags={tag["key"]: tag.get("value", "") for tag in data.get("tags", []) if isinstance(tag, dict) and "key" in tag},
         )

@@ -124,7 +124,7 @@ class RepoManager:
         """Clone or prepare a repository for modifications.
 
         Args:
-            repo_url: URL of the repository (SSH or HTTPS).
+            repo_url: URL of the repository (SSH, HTTPS, or local path).
             base_branch: Branch to use as base for fixes.
             depth: Shallow clone depth. None for full clone.
 
@@ -135,7 +135,12 @@ class RepoManager:
             CloneError: If cloning fails.
             AuthenticationError: If authentication fails.
         """
-        # Generate unique directory name
+        # Check if repo_url is a local path
+        local_path = Path(repo_url)
+        if local_path.exists() and local_path.is_dir():
+            return self._prepare_local_repository(local_path, base_branch)
+
+        # Generate unique directory name for remote repos
         repo_name = self._extract_repo_name(repo_url)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         repo_dir = self.work_dir / f"{repo_name}_{timestamp}"
@@ -191,6 +196,97 @@ class RepoManager:
             if repo_dir.exists():
                 shutil.rmtree(repo_dir, ignore_errors=True)
             raise CloneError(f"Unexpected error cloning repository: {e}") from e
+
+    def _prepare_local_repository(
+        self,
+        local_path: Path,
+        base_branch: str,
+    ) -> Path:
+        """Prepare a local repository for modifications.
+
+        Creates a working copy by copying the repository to avoid modifying
+        the original.
+
+        Args:
+            local_path: Path to the local repository.
+            base_branch: Branch to checkout.
+
+        Returns:
+            Path to the working copy.
+
+        Raises:
+            CloneError: If preparation fails.
+        """
+        try:
+            # Verify it's a git repository
+            source_repo = Repo(local_path)
+        except InvalidGitRepositoryError:
+            raise CloneError(f"Not a valid Git repository: {local_path}")
+
+        # Generate unique directory name
+        repo_name = local_path.name
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        repo_dir = self.work_dir / f"{repo_name}_{timestamp}"
+
+        try:
+            # Copy the repository, excluding .bughawk directory to avoid recursion
+            def ignore_bughawk(directory, files):
+                if ".bughawk" in files:
+                    return [".bughawk"]
+                return []
+
+            shutil.copytree(local_path, repo_dir, symlinks=True, ignore=ignore_bughawk)
+
+            # Open the copied repo and checkout the base branch
+            repo = Repo(repo_dir)
+
+            # Reset any changes that may have been copied (e.g., modified config files)
+            repo.git.reset("--hard", "HEAD")
+
+            # Check if branch exists locally or in remotes
+            branch_exists = False
+            for ref in repo.references:
+                if ref.name == base_branch or ref.name == f"origin/{base_branch}":
+                    branch_exists = True
+                    break
+
+            if branch_exists:
+                # Checkout the branch with force to overwrite any local changes
+                if base_branch in [h.name for h in repo.heads]:
+                    repo.heads[base_branch].checkout(force=True)
+                else:
+                    # Create local branch from remote
+                    repo.create_head(base_branch, f"origin/{base_branch}")
+                    repo.heads[base_branch].checkout(force=True)
+
+            # Configure remote URLs with authentication if token is available
+            # This is needed when pushing from a local copy to any remote
+            for remote in repo.remotes:
+                current_url = remote.url
+                # Get authenticated URL
+                auth_url = self._prepare_auth_url(current_url)
+                if auth_url != current_url:
+                    # Update remote URL with token
+                    repo.git.remote("set-url", remote.name, auth_url)
+
+            # Store repo info
+            self._repos[repo_dir] = RepoInfo(
+                path=repo_dir,
+                url=str(local_path),
+                branch=base_branch,
+                is_temporary=True,
+            )
+
+            return repo_dir
+
+        except GitCommandError as e:
+            if repo_dir.exists():
+                shutil.rmtree(repo_dir, ignore_errors=True)
+            raise CloneError(f"Failed to prepare local repository: {e}") from e
+        except Exception as e:
+            if repo_dir.exists():
+                shutil.rmtree(repo_dir, ignore_errors=True)
+            raise CloneError(f"Unexpected error preparing repository: {e}") from e
 
     def create_fix_branch(
         self,
@@ -261,9 +357,38 @@ class RepoManager:
             repo = Repo(repo_path)
 
             for file_path, content in changes.items():
-                # Handle both absolute and relative paths
-                if Path(file_path).is_absolute():
-                    full_path = Path(file_path)
+                path = Path(file_path)
+
+                # Handle server absolute paths (e.g., /var/www/html/app/...)
+                # Convert to relative path by stripping common server prefixes
+                if path.is_absolute():
+                    # Common server root paths to strip
+                    server_roots = [
+                        "/var/www/html/",
+                        "/var/www/",
+                        "/home/www/",
+                        "/srv/www/",
+                        "/app/",
+                    ]
+
+                    path_str = str(path)
+                    rel_path = None
+
+                    for root in server_roots:
+                        if path_str.startswith(root):
+                            rel_path = path_str[len(root):]
+                            break
+
+                    if rel_path:
+                        full_path = repo_path / rel_path
+                    else:
+                        # If no known root, try to find file by name in repo
+                        file_name = path.name
+                        matches = list(repo_path.rglob(file_name))
+                        if matches:
+                            full_path = matches[0]
+                        else:
+                            full_path = repo_path / path.name
                 else:
                     full_path = repo_path / file_path
 
@@ -396,9 +521,10 @@ class RepoManager:
             remote_obj = repo.remote(remote)
 
             # Prepare push URL with authentication
-            repo_info = self._repos.get(repo_path)
-            if repo_info:
-                auth_url = self._prepare_auth_url(repo_info.url)
+            # Get actual remote URL (not local path for copied repos)
+            current_remote_url = remote_obj.url
+            auth_url = self._prepare_auth_url(current_remote_url)
+            if auth_url != current_remote_url:
                 remote_obj.set_url(auth_url)
 
             # Prepare environment
@@ -409,19 +535,17 @@ class RepoManager:
             if set_upstream:
                 refspec = f"refs/heads/{branch_name}:refs/heads/{branch_name}"
 
-            # Push
-            push_kwargs = {"env": env}
+            # Push using git command directly for better compatibility
+            push_args = ["push"]
+            if set_upstream:
+                push_args.extend(["-u"])
             if force:
-                push_kwargs["force"] = True
+                push_args.extend(["--force"])
+            push_args.extend([remote, branch_name])
 
-            push_info = remote_obj.push(refspec, **push_kwargs)
-
-            # Check push result
-            for info in push_info:
-                if info.flags & info.ERROR:
-                    raise PushError(f"Push failed: {info.summary}")
-                if info.flags & info.REJECTED:
-                    raise PushError(f"Push rejected: {info.summary}")
+            # Use git command directly with environment
+            with repo.git.custom_environment(**env):
+                result = repo.git.push(*push_args[1:])  # skip 'push' as it's the method
 
             return True
 
@@ -604,8 +728,13 @@ class RepoManager:
             token = self.gitlab_token
 
         if token:
-            # Embed token in URL: https://token@host/path
-            auth_netloc = f"{token}@{parsed.netloc}"
+            # Embed token in URL
+            # GitHub: https://token@github.com/...
+            # GitLab: https://oauth2:token@gitlab.com/...
+            if "gitlab" in parsed.netloc:
+                auth_netloc = f"oauth2:{token}@{parsed.netloc}"
+            else:
+                auth_netloc = f"{token}@{parsed.netloc}"
             return parsed._replace(netloc=auth_netloc).geturl()
 
         return repo_url

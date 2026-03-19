@@ -18,6 +18,45 @@ BugHawk is an intelligent, automated bug hunting and fixing CLI tool that integr
     |    |
 ```
 
+## 🔄 How It Works (Overview)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           BugHawk Workflow                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌───────────┐ │
+│  │   Sentry     │    │   BugHawk    │    │     LLM      │    │  GitLab/  │ │
+│  │   Datadog    │───▶│   Analyze    │───▶│   Generate   │───▶│  GitHub   │ │
+│  │   Rollbar    │    │   Context    │    │   Fix Code   │    │    PR     │ │
+│  │   Bugsnag    │    │              │    │              │    │           │ │
+│  └──────────────┘    └──────────────┘    └──────────────┘    └─────┬─────┘ │
+│        ▲                                                           │       │
+│        │              Production Errors                            │       │
+│        │                                                           ▼       │
+│  ┌─────┴─────┐                                              ┌────────────┐ │
+│  │   Your    │                                              │Slack/Teams │ │
+│  │   App     │                                              │Discord/n8n │ │
+│  └─────┬─────┘                                              └──────┬─────┘ │
+│        ▲                                                           │       │
+│        │                                                           ▼       │
+│        │                                                    ┌───────────┐  │
+│        └─────────────── Merge PR ◀──────────────────────────│   Team    │  │
+│                                                             │  Review   │  │
+│                                                             └───────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+Flow:
+1. 🔍 DETECT   - Errors logged to Sentry/Datadog/Rollbar/Bugsnag
+2. 📥 FETCH    - BugHawk fetches error details & stack traces
+3. 🔎 LOCATE   - Find error location in your codebase
+4. 🧠 ANALYZE  - LLM analyzes root cause & generates fix
+5. 🔧 FIX      - Apply code changes to new branch
+6. 📤 PR       - Create Pull/Merge Request automatically
+7. 📢 NOTIFY   - Alert team via Slack/Teams/Discord/n8n webhook
+8. ✅ REVIEW   - Team reviews & merges the fix
+```
+
 ## ✨ Features
 
 - **🔍 Multi-Platform Monitoring**: Integrates with Sentry, Datadog, Rollbar, Bugsnag, and other error tracking platforms
@@ -540,6 +579,34 @@ git:
 # General settings
 debug: false              # Enable debug logging
 output_dir: .bughawk      # Output directory
+
+# Notifications - alert team when PRs are created
+notifications:
+  slack:
+    enabled: false
+    webhook_url: ""
+    mention_users: []      # Slack user IDs
+    mention_groups: []     # Slack group IDs
+
+  teams:
+    enabled: false
+    webhook_url: ""
+    mention_users: []
+
+  discord:
+    enabled: false
+    webhook_url: ""
+    mention_users: []      # Discord user IDs
+    mention_groups: []     # Discord role IDs
+
+  # Custom webhooks for n8n, Zapier, or other integrations
+  custom_webhooks:
+    - name: "n8n-msteams"
+      enabled: true
+      webhook_url: "https://your-n8n.com/webhook/xxx"
+      environment: "dev"   # dev, staging, production
+      mention_users: []
+      mention_groups: []
 ```
 
 ### Environment Variables
@@ -562,6 +629,74 @@ output_dir: .bughawk      # Output directory
 | `BUGHAWK_GIT_PROVIDER` | Git provider (github/gitlab/bitbucket) |
 | `BUGHAWK_GIT_TOKEN` | Git API token |
 | `BUGHAWK_DEBUG` | Enable debug mode (true/false) |
+
+## 📢 Notifications
+
+BugHawk can send notifications to your team when automated fix PRs are created. Supports multiple channels:
+
+### Supported Channels
+
+| Channel | Description |
+|---------|-------------|
+| **Slack** | Rich Block Kit messages with action buttons |
+| **Microsoft Teams** | Adaptive Cards with review actions |
+| **Discord** | Embedded messages with PR details |
+| **Custom Webhooks** | Generic JSON payload for n8n, Zapier, etc. |
+
+### Configuration
+
+```yaml
+notifications:
+  slack:
+    enabled: true
+    webhook_url: "https://hooks.slack.com/services/xxx"
+    mention_users: ["U12345678"]      # Slack user IDs
+    mention_groups: ["S12345678"]     # Slack user group IDs
+
+  teams:
+    enabled: true
+    webhook_url: "https://outlook.office.com/webhook/xxx"
+    mention_users: ["user@company.com"]
+
+  discord:
+    enabled: true
+    webhook_url: "https://discord.com/api/webhooks/xxx"
+    mention_users: ["123456789"]      # Discord user IDs
+    mention_groups: ["987654321"]     # Discord role IDs
+
+  custom_webhooks:
+    - name: "n8n-msteams"
+      enabled: true
+      webhook_url: "https://your-n8n.com/webhook/xxx"
+      environment: "dev"              # dev, staging, production
+      mention_users: []
+      mention_groups: []
+```
+
+### Custom Webhook Payload
+
+For custom integrations (n8n, Zapier, etc.), BugHawk sends a JSON payload:
+
+```json
+{
+  "event": "pr_created",
+  "channel_name": "n8n-msteams",
+  "environment": "dev",
+  "pr_url": "https://gitlab.com/org/repo/-/merge_requests/123",
+  "pr_title": "fix: [Sentry #12345] Fix null pointer exception",
+  "issue_id": "12345",
+  "issue_title": "TypeError: Cannot read property 'x' of undefined",
+  "repo_name": "my-project",
+  "branch_name": "bughawk/fix-12345",
+  "confidence_score": 0.85,
+  "fix_description": "Added null check before accessing property",
+  "sentry_url": "https://sentry.io/issues/12345/",
+  "mention_users": [],
+  "mention_groups": []
+}
+```
+
+The `environment` field allows downstream systems (like n8n workflows) to route notifications to different channels based on environment (dev, staging, production).
 
 ## 🧪 Testing
 

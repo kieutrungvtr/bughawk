@@ -764,11 +764,18 @@ def show_status(days: int) -> None:
     is_flag=True,
     help="Fetch all pages of results (may be slow)",
 )
+@click.option(
+    "--sort",
+    type=click.Choice(["fixability", "count", "recent"], case_sensitive=False),
+    default=None,
+    help="Sort issues: fixability (stacktrace first), count (most occurrences), recent (last seen)",
+)
 def list_issues(
     project: Optional[str],
     severity: Optional[str],
     limit: int,
     all_pages: bool,
+    sort: Optional[str],
 ) -> None:
     """List unresolved issues from Sentry.
 
@@ -822,7 +829,9 @@ def list_issues(
         print_info("No unresolved issues found.")
         return
 
-    display_issues = issues[:limit]
+    # Sort issues if requested
+    sorted_issues = _sort_issues(issues, sort, client) if sort else issues
+    display_issues = sorted_issues[:limit]
 
     table = Table(
         title=f"{HAWK} Issues in [hawk.amber]{target_project}[/hawk.amber]",
@@ -833,19 +842,22 @@ def list_issues(
     )
 
     table.add_column("ID", style="hawk.feather", width=12)
-    table.add_column("Title", style="white", max_width=50)
+    table.add_column("Title", style="white", max_width=45)
     table.add_column("Level", justify="center", width=8)
     table.add_column("Count", justify="right", width=8)
-    table.add_column("Last Seen", style="hawk.dim", width=20)
+    table.add_column("Fix", justify="center", width=5)  # Fixability indicator
+    table.add_column("Last Seen", style="hawk.dim", width=16)
 
     for issue in display_issues:
         last_seen = issue.last_seen.strftime("%Y-%m-%d %H:%M") if issue.last_seen else "Unknown"
+        fixability = _get_fixability_indicator(issue)
 
         table.add_row(
             issue.id,
-            issue.title[:50] + "..." if len(issue.title) > 50 else issue.title,
+            issue.title[:45] + "..." if len(issue.title) > 45 else issue.title,
             format_severity(issue.level.value if isinstance(issue.level, IssueSeverity) else str(issue.level)),
             format_count(issue.count),
+            fixability,
             last_seen,
         )
 
@@ -859,6 +871,70 @@ def list_issues(
         )
 
     console.print(f"\n[hawk.dim]To fix an issue: [hawk.amber]bughawk fix ISSUE_ID[/hawk.amber][/hawk.dim]")
+    console.print(f"[hawk.dim]Fix column: [green]+++[/] = has stacktrace, [yellow]++[/] = has culprit, [red]+[/] = message only[/hawk.dim]")
+
+
+def _get_fixability_indicator(issue: Any) -> str:
+    """Get fixability indicator for an issue.
+
+    Returns:
+        +++ (green): Has stacktrace (highest confidence for fix)
+        ++  (yellow): Has culprit but no stacktrace
+        +   (red): Only has message (lowest confidence)
+    """
+    # Check if has culprit (indicates we know the source location)
+    has_culprit = bool(issue.culprit and issue.culprit not in ("Unknown", "", "unknown"))
+
+    # Check metadata for exception info (indicates stacktrace might exist)
+    has_exception = False
+    if hasattr(issue, "metadata") and issue.metadata:
+        # Check for exception type in metadata
+        has_exception = bool(issue.metadata.get("type") or issue.metadata.get("value"))
+
+    if has_exception:
+        return "[green]+++[/]"  # High fixability
+    elif has_culprit:
+        return "[yellow]++ [/]"  # Medium fixability
+    else:
+        return "[red]+  [/]"  # Low fixability (message only)
+
+
+def _sort_issues(issues: List[Any], sort_by: str, client: Any) -> List[Any]:
+    """Sort issues by the specified criteria.
+
+    Args:
+        issues: List of issues to sort
+        sort_by: Sort criteria (fixability, count, recent)
+        client: Sentry client (for fetching additional data if needed)
+
+    Returns:
+        Sorted list of issues
+    """
+    if sort_by == "fixability":
+        # Sort by fixability score (higher = more fixable)
+        def fixability_score(issue: Any) -> tuple:
+            has_culprit = bool(issue.culprit and issue.culprit not in ("Unknown", "", "unknown"))
+            has_exception = False
+            if hasattr(issue, "metadata") and issue.metadata:
+                has_exception = bool(issue.metadata.get("type") or issue.metadata.get("value"))
+
+            # Score: (has_exception, has_culprit, count)
+            # Higher tuple values = more fixable
+            return (has_exception, has_culprit, issue.count)
+
+        return sorted(issues, key=fixability_score, reverse=True)
+
+    elif sort_by == "count":
+        return sorted(issues, key=lambda i: i.count, reverse=True)
+
+    elif sort_by == "recent":
+        return sorted(
+            issues,
+            key=lambda i: i.last_seen if i.last_seen else datetime.min,
+            reverse=True,
+        )
+
+    return issues
 
 
 @main.command("show-issue")
@@ -1003,9 +1079,105 @@ def show_issue(issue_id: str, events: int) -> None:
                             )
                         )
                     break
+        else:
+            # No stacktrace - try codebase search to show related files
+            _show_codebase_context(issue, issue_events[0] if issue_events else None)
 
     # Action hint
     console.print(f"\n[hawk.dim]To fix this issue: [hawk.amber]bughawk fix {issue_id}[/hawk.amber][/hawk.dim]")
+
+
+def _show_codebase_context(issue: Any, event: Optional[Dict[str, Any]]) -> None:
+    """Show context resolved from codebase search when no stacktrace available."""
+    from pathlib import Path
+
+    try:
+        from bughawk.context import ContextResolver
+
+        # Try to find repo path from current directory
+        repo_path = Path.cwd()
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn(f"[hawk.gold]{HAWK} Searching codebase for related files...[/hawk.gold]"),
+            console=console,
+        ) as progress:
+            progress.add_task("search", total=None)
+
+            resolver = ContextResolver()
+            result = resolver.resolve(issue, event, repo_path)
+
+        if result.success and result.context:
+            ctx = result.context
+
+            # Show resolution info
+            console.print()
+            console.print(
+                Panel(
+                    f"[yellow]No stacktrace available[/yellow] - searched codebase\n"
+                    f"[hawk.dim]Method:[/hawk.dim] {ctx.source.value}\n"
+                    f"[hawk.dim]Confidence:[/hawk.dim] {ctx.confidence:.0%}\n"
+                    f"[hawk.dim]Files found:[/hawk.dim] {len(ctx.source_files)}",
+                    title="Context Resolution",
+                    border_style="yellow",
+                )
+            )
+
+            # Show related files
+            if ctx.source_files:
+                files_text = Text()
+                for sf in ctx.source_files[:5]:
+                    files_text.append(f"  {sf.path}", style="hawk.amber")
+                    files_text.append(f" ({sf.relevance_score:.0%})\n", style="hawk.dim")
+                    files_text.append(f"    {sf.match_reason}\n", style="hawk.feather")
+
+                    # Show snippet preview if available
+                    if sf.snippets:
+                        snippet = sf.snippets[0]
+                        preview = snippet.content.split('\n')[0][:60]
+                        files_text.append(f"    Line {snippet.highlight_line or snippet.start_line}: ", style="hawk.dim")
+                        files_text.append(f"{preview}...\n", style="white")
+                    files_text.append("\n")
+
+                console.print()
+                console.print(
+                    Panel(
+                        files_text,
+                        title="Related Files (from codebase search)",
+                        border_style="hawk.bronze",
+                    )
+                )
+        else:
+            console.print()
+            console.print(
+                Panel(
+                    f"[yellow]No stacktrace available[/yellow]\n"
+                    f"[hawk.dim]Codebase search: {result.error if result else 'failed'}[/hawk.dim]",
+                    title="Context Resolution",
+                    border_style="yellow",
+                )
+            )
+
+    except ImportError:
+        console.print()
+        console.print(
+            Panel(
+                "[yellow]No stacktrace available[/yellow]\n"
+                "[hawk.dim]Context resolution module not available[/hawk.dim]",
+                title="Context Resolution",
+                border_style="yellow",
+            )
+        )
+    except Exception as e:
+        console.print()
+        console.print(
+            Panel(
+                f"[yellow]No stacktrace available[/yellow]\n"
+                f"[hawk.dim]Codebase search failed: {e}[/hawk.dim]",
+                title="Context Resolution",
+                border_style="yellow",
+            )
+        )
 
 
 # =============================================================================
@@ -1074,6 +1246,30 @@ git:
   branch_prefix: "bughawk/fix-"
   auto_pr: true
   base_branch: "main"
+
+# Notifications - send alerts when PRs are created
+notifications:
+  slack:
+    enabled: false
+    webhook_url: ""  # https://hooks.slack.com/services/xxx
+    mention_users: []  # ["U1234567890"]
+    mention_groups: []  # ["S1234567890"] for @team mentions
+
+  teams:
+    enabled: false
+    webhook_url: ""  # https://outlook.office.com/webhook/xxx
+    mention_users: []
+
+  discord:
+    enabled: false
+    webhook_url: ""  # https://discord.com/api/webhooks/xxx
+    mention_users: []  # ["user_id"]
+    mention_groups: []  # ["role_id"] for @role mentions
+
+  # Custom webhooks for other integrations
+  custom_webhooks: []
+  # - enabled: true
+  #   webhook_url: "https://your-service.com/webhook"
 
 debug: false
 output_dir: ".bughawk"

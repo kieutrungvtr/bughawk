@@ -674,7 +674,7 @@ class SentryClient:
             last_seen=data.get("lastSeen"),
             status=data.get("status", "unresolved"),
             metadata=data.get("metadata", {}),
-            tags={tag["key"]: tag["value"] for tag in data.get("tags", [])},
+            tags={tag["key"]: tag.get("value", "") for tag in data.get("tags", []) if "key" in tag},
         )
 
     def _extract_stacktrace(self, event_data: dict[str, Any]) -> str:
